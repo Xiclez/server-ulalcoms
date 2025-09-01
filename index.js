@@ -120,8 +120,8 @@ app.post('/alumno/info', async (req, res) => {
   }
 });
 
-app.get('/',(res)=>{
-res.json("200")
+app.get('/', (req, res) => {
+  res.json("200");
 });
 
 app.listen(port, '0.0.0.0', () => {
