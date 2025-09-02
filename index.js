@@ -51,8 +51,8 @@ async function queryDatabase(query, params) {
   }
 }
 
+
 app.post('/alumno/info', async (req, res) => {
-  // 1. Validar la entrada
   const { matricula } = req.body;
 
   if (!matricula) {
@@ -60,61 +60,66 @@ app.post('/alumno/info', async (req, res) => {
   }
 
   try {
-    // 2. Definir la consulta SQL con JOINs y alias para facilitar el mapeo
+    // --- CONSULTA SQL ACTUALIZADA ---
     const sqlQuery = `
       SELECT
-        -- Concatena los nombres y les asigna el alias 'Nombre'
         CONCAT(c.FirstName, ' ', c.LastName, ' ', c.LastNameMother) AS Nombre,
         c.Phone AS Telefono,
         isc.DatePay AS FechaInscripcion,
         isc.TotalInscription AS PagoInscripcion,
-        isvc.Description AS Curso
+        isvc.Description AS Curso,
+        
+        -- INICIO: Nueva lógica para verificar el pago
+        CASE 
+          WHEN iscp.isPaid = 1 THEN 'Sí'
+          ELSE 'No'
+        END AS Pagado
+        -- FIN: Nueva lógica para verificar el pago
+
       FROM
         [ULAL].[dbo].[Customer] c
       INNER JOIN
         [ULAL].[dbo].[ItemServiceCustomer] isc ON c.CustomerId = isc.CustomerId
       INNER JOIN
         [ULAL].[dbo].[ItemService] isvc ON isc.ItemServiceId = isvc.ItemServiceId
+      LEFT JOIN -- Usamos LEFT JOIN para incluir alumnos aunque no tengan registro de pago
+        [ULAL].[dbo].[ItemServiceCustomerPayment] iscp ON isc.ItemServiceCustomerId = iscp.ItemServiceCustomerId
+        AND iscp.Description = 'Inscripción' -- Condición específica para el tipo de pago
       WHERE
         c.Enrollment = @matricula;
     `;
 
-    // 3. Definir los parámetros para la consulta segura
     const params = {
       matricula: matricula
     };
 
-    // 4. Ejecutar la consulta usando tu helper
     const result = await queryDatabase(sqlQuery, params);
 
-    // 5. Manejar la respuesta
     if (result && result.length > 0) {
-      // Si se encontró el alumno, extraemos el primer resultado
       const alumnoInfo = result[0];
+
+      // Formateo de la fecha (si lo sigues usando)
       const fechaObj = new Date(alumnoInfo.FechaInscripcion);
       const dia = String(fechaObj.getDate()).padStart(2, '0');
-      const mes = String(fechaObj.getMonth() + 1).padStart(2, '0'); // Se suma 1 porque los meses en JS van de 0 a 11
+      const mes = String(fechaObj.getMonth() + 1).padStart(2, '0');
       const anio = fechaObj.getFullYear();
-
       const fechaFormateada = `${dia}/${mes}/${anio}`;
-      // Mapeamos los resultados a la estructura final deseada
+
       const responseData = {
         'Nombre': alumnoInfo.Nombre,
         'Teléfono': alumnoInfo.Telefono,
-        'Curso': alumnoInfo.Curso,
         'Fecha de Inscripción': fechaFormateada,
-        'Pago de Inscripción': alumnoInfo.PagoInscripcion,
-        
+        'Monto de Inscripción': alumnoInfo.PagoInscripcion,
+        'Curso': alumnoInfo.Curso,
+        'Pagado': alumnoInfo.Pagado // <-- AÑADIMOS EL NUEVO CAMPO A LA RESPUESTA
       };
 
       res.json(responseData);
     } else {
-      // Si la consulta no devuelve resultados, el alumno no fue encontrado
       res.status(404).json({ error: `No se encontraron datos para la matrícula: ${matricula}` });
     }
 
   } catch (error) {
-    // Manejo de errores de la base de datos o del servidor
     console.error('Error al consultar la información del alumno:', error);
     res.status(500).json({ error: 'Error interno del servidor al procesar la solicitud.' });
   }
